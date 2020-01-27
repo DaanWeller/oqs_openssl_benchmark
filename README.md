@@ -1,4 +1,4 @@
-# ${1: Open Quantum Safe with OpenSSL TLS1.3 handshake benchmarking}
+# Open Quantum Safe with OpenSSL TLS1.3 handshake benchmarking
 
 ## Summary
 
