@@ -2,7 +2,10 @@ import os
 import time
 import argparse
 from configparser import ConfigParser
+from barry import bot_token
+from barry import bot_chatID
 import subprocess
+import requests
 
 
 wd = ''
@@ -17,12 +20,17 @@ export_options = ''
 def main():
     initialize()
 
+    telegram_bot_sendtext('begin testing!')
+
     for sig in sigs:
         create_certificate_authority(sig)
         create_server_keypair_CArequest(sig)
         create_signed_certificate(sig)
+        telegram_bot_sendtext(f'##### Now computing KEMs for {sig} #####')
         for kem in kems:
             benchmark_key_exchange(sig, kem)
+        telegram_bot_sendtext(f'Done with all tests for {kem}!')
+    telegram_bot_sendtext('The whole test is completed! \o/')
 
 def initialize():
     wd = os.getcwd()
@@ -91,6 +99,29 @@ def create_server_keypair_CArequest(signature_algorithm):
 
     run_hyperfine(command, options)
 
+def create_client(signature_algorithm):
+    global resultsdir, openssl
+    s = signature_algorithm 
+    output_folder = f'{resultsdir}/{s}'
+    os.makedirs(output_folder, exist_ok=True)
+    command = (f'{openssl} ' 
+               f'req -new -newkey {s} ' 
+               f'-keyout {output_folder}/{s}_client.key ' 
+               f'-out {output_folder}/{s}_client.csr ' 
+               f'-nodes -subj "/CN={s}_test client" ' 
+               f'-config {openssl}.cnf')
+
+    subprocess.run(command, shell=True)
+
+    command = (f'{openssl} ' 
+               f'x509 -req ' 
+               f'-in {output_folder}/{s}_client.csr ' 
+               f'-out {output_folder}/{s}_client.crt ' 
+               f'-CA {output_folder}/{s}_CA.crt -CAkey {output_folder}/{s}_CA.key '
+               f'-CAcreateserial -days 365')
+ 
+    subprocess.run(command, shell=True)
+
 def create_signed_certificate(signature_algorithm):
     global resultsdir, openssl
     s = signature_algorithm 
@@ -113,6 +144,10 @@ def benchmark_key_exchange(s, kem):
 
     # copy over server key and certificate to remote server home folder
     subprocess.run(f'scp {output_folder}/{s}_srv.key {output_folder}/{s}_srv.crt {server_ip}:~/', shell=True, check=True)
+    
+    # build tcpdump command
+        # on sofia
+    
     # build server command
     server_command = f'{openssl} s_server -cert {s}_srv.crt -key {s}_srv.key -www -tls1_3 -naccept {runs}'
     ssh_command = f'ssh -f {server_ip} \"{server_command}\"'
@@ -122,13 +157,30 @@ def benchmark_key_exchange(s, kem):
     server_proc = subprocess.run(ssh_command, shell=True)
     time.sleep(3)
 
-    # run benchmark test
-    command = f'{openssl} s_client -curves {kem} -CAfile {output_folder}/{s}_CA.crt -connect {server_ip}:{server_port}'
+    create_client(s)
+
+    # run benchmark test {output_folder}/{s}_client.crt 
+    command = (f'{openssl} s_client '
+               f'-curves {kem} '
+               f'-CAfile {output_folder}/{s}_CA.crt '
+               f'-key {output_folder}/{s}_client.key '
+               f'-cert {output_folder}/{s}_client.crt '
+               f'-connect {server_ip}:{server_port}')
     options = f'--runs {runs} --export-json {output_folder}/{s}_{kem}.json'
     run_hyperfine(command, options)
+    telegram_bot_sendtext(f'{s}   {kem} completed!') # stop server
+
+    stop_server = 'ps -ef | grep s_server | grep -v grep | awk \'{print $2}\' | xargs -r kill -9' 
+    ssh_command = f'ssh -f {server_ip} \"{stop_server}\"'
+    server_proc = subprocess.run(ssh_command, shell=True)
+
+def telegram_bot_sendtext(bot_message):
     
-    # stop server
-    #server_proc.kill()
+    send_text = 'https://api.telegram.org/bot' + bot_token + '/sendMessage?chat_id=' + bot_chatID + '&parse_mode=Markdown&text=' + bot_message
+
+    response = requests.get(send_text)
+
+    return response.json()
 
 if __name__ == '__main__':
     main()
