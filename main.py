@@ -2,8 +2,7 @@ import os
 import time
 import argparse
 from configparser import ConfigParser
-from barry import bot_token
-from barry import bot_chatID
+from barry import bot_token, bot_chatID # <-- barry.py contains our bot token and bot_chatID
 import subprocess
 import requests
 
@@ -14,23 +13,63 @@ openssl = ''
 
 kems = []
 sigs = []
+nonpqc_sigs = []
 
 export_options = ''
 
 def main():
+    global sigs, kems, nonpqc_sigs
     initialize()
-
+    
+    telegram_bot_sendtext('---------------------------------------')
     telegram_bot_sendtext('begin testing!')
 
+    amount_sig = len(sigs) + len(nonpqc_sigs)
+    amount_kem = len(kems)
+    amount_total = amount_sig * amount_kem
+    nr_sig = 0
+    nr_kem = 0
+    nr_total = 0
+
+    telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
+    telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
+
     for sig in sigs:
+        nr_total += 1
+        nr_sig += 1
+        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
         create_certificate_authority(sig)
         create_server_keypair_CArequest(sig)
         create_signed_certificate(sig)
-        telegram_bot_sendtext(f'##### Now computing KEMs for {sig} #####')
+        
         for kem in kems:
+            tcpdump_start(sig, kem)           
             benchmark_key_exchange(sig, kem)
-        telegram_bot_sendtext(f'Done with all tests for {kem}!')
+            tcpdump_stop()
+            nr_kem += 1
+        telegram_bot_sendtext(f'Done with all tests for {sig}!')
+        nr_kem = 0
+
+    for nonpqc_sig in nonpqc_sigs:
+        nr_total += 1
+        nr_sig += 1
+
+        sig = f'ec:<(apps/openssl ecparam -name {nonpqc_sig})'
+        
+        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
+        create_certificate_authority(sig)
+        create_server_keypair_CArequest(sig)
+        create_signed_certificate(sig)
+        for kem in kems:
+            tcpdump_start(sig, kem)
+            benchmark_key_exchange(sig, kem)
+            tcpdump_stop()
+            nr_kem += 1
+        telegram_bot_sendtext(f'Done with all tests for {sig}!')
+        nr_kem = 0
+
     telegram_bot_sendtext('The whole test is completed! \o/')
+        
 
 def initialize():
     wd = os.getcwd()
@@ -49,7 +88,7 @@ def parse_config(config_path):
     config = ConfigParser(delimiters=('='))
     config.read(config_path)
     
-    global resultsdir, openssl, server_ip, server_port, kems, sigs
+    global resultsdir, openssl, server_ip, server_port, kems, sigs, nonpqc_sigs
 
     resultsdir  = config.get('main', 'results_dir')
     openssl     = config.get('main', 'openssl_app')
@@ -57,6 +96,7 @@ def parse_config(config_path):
     server_port = config.get('main', 'server_port')
     kems        = [kem.strip() for kem in config.get('main', 'kems').splitlines()]
     sigs        = [sig.strip() for sig in config.get('main', 'signatures').splitlines()]
+    nonpqc_sigs = [nonpqcsig.strip() for nonpqcsig in config.get('main', 'nonpqc_sigs').splitlines()]
     #export_options = [e.strip() for e in config.get('main', 'export_options').splitlines()]
 
 def run_hyperfine(command, options):   
@@ -138,7 +178,7 @@ def create_signed_certificate(signature_algorithm):
     run_hyperfine(command, options)
     
 def benchmark_key_exchange(s, kem):
-    global resultsdir, openssl, server_ip, server_port
+    global resultsdir, openssl, server_ip, server_port, amount_kem 
     output_folder = f'{resultsdir}/{s}'
     runs = 100
 
@@ -168,11 +208,21 @@ def benchmark_key_exchange(s, kem):
                f'-connect {server_ip}:{server_port}')
     options = f'--runs {runs} --export-json {output_folder}/{s}_{kem}.json'
     run_hyperfine(command, options)
-    telegram_bot_sendtext(f'{s}   {kem} completed!') # stop server
-
+    telegram_bot_sendtext(f'{s} {kem} completed! \[ {nr_kem} / {amount_kem} \]') 
+    
+    # stop server
     stop_server = 'ps -ef | grep s_server | grep -v grep | awk \'{print $2}\' | xargs -r kill -9' 
     ssh_command = f'ssh -f {server_ip} \"{stop_server}\"'
     server_proc = subprocess.run(ssh_command, shell=True)
+
+def tcpdump_start(s, kem):
+    global resultsdir
+    output_folder = f'{resultsdir}/{s}'
+    tcpdump_command = f'tcpdump & -i eth0 \'host 145.100.105.244 && host 145.100.106.82\' -w {output_folder}/{s}_{kem}.pcap > /dev/null 2>&1'
+    subprocess.run(tcpdump_command, shell=True, check=True)
+
+def tcpdump_stop():
+    subprocess.run("ps -ef | grep tcpdump | grep -v grep | awk \'{print $2}\' | xargs -r kill -9", shell=True, check=True)
 
 def telegram_bot_sendtext(bot_message):
     
