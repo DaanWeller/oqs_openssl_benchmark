@@ -35,7 +35,6 @@ def main():
     telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
 
     for sig in sigs:
-        nr_total += 1
         nr_sig += 1
         telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
         create_certificate_authority(sig)
@@ -47,6 +46,8 @@ def main():
             benchmark_key_exchange(sig, kem)
             tcpdump_stop()
             nr_kem += 1
+            nr_total += 1
+            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         nr_kem = 0
 
@@ -65,6 +66,8 @@ def main():
             benchmark_key_exchange(sig, kem)
             tcpdump_stop()
             nr_kem += 1
+            nr_total += 1
+            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         nr_kem = 0
 
@@ -208,7 +211,6 @@ def benchmark_key_exchange(s, kem):
                f'-connect {server_ip}:{server_port}')
     options = f'--runs {runs} --export-json {output_folder}/{s}_{kem}.json'
     run_hyperfine(command, options)
-    telegram_bot_sendtext(f'{s} {kem} completed! \[ {nr_kem} / {amount_kem} \]') 
     
     # stop server
     stop_server = 'ps -ef | grep s_server | grep -v grep | awk \'{print $2}\' | xargs -r kill -9' 
@@ -218,7 +220,7 @@ def benchmark_key_exchange(s, kem):
 def tcpdump_start(s, kem):
     global resultsdir
     output_folder = f'{resultsdir}/{s}'
-    tcpdump_command = f'tcpdump & -i eth0 \'host 145.100.105.244 && host 145.100.106.82\' -w {output_folder}/{s}_{kem}.pcap > /dev/null 2>&1'
+    tcpdump_command = f'tcpdump -i eth0 \'host 145.100.105.244 && host 145.100.106.82\' -w {output_folder}/{s}_{kem}.pcap &'
     subprocess.run(tcpdump_command, shell=True, check=True)
 
 def tcpdump_stop():
