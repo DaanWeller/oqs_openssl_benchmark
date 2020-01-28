@@ -33,8 +33,25 @@ def main():
     nr_kem = 0
     nr_total = 0
 
+
+    for sig in sigs:
+        nr_sig += 1
+        
+        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
+        create_certificate_authority(sig)
+        create_server_keypair_CArequest(sig)
+        create_signed_certificate(sig)
+        for kem in kems:
+            tcpdump_start(sig, kem)
+            benchmark_key_exchange(sig, kem)
+            tcpdump_stop()
+            nr_kem += 1
+            nr_total += 1
+            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
+        telegram_bot_sendtext(f'Done with all tests for {sig}!')
+        nr_kem = 0
+
     for nonpqc_sig in nonpqc_sigs:
-        nr_total += 1
         nr_sig += 1
 
         sig = nonpqc_sig
@@ -57,23 +74,23 @@ def main():
     telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
     telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
 
-    for sig in sigs:
-        nr_sig += 1
-        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
-        create_certificate_authority(sig)
-        create_server_keypair_CArequest(sig)
-        create_signed_certificate(sig)
-        
-        for kem in kems:
-            tcpdump_start(sig, kem)           
-            benchmark_key_exchange(sig, kem)
-            tcpdump_stop()
-            nr_kem += 1
-            nr_total += 1
-            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
-        telegram_bot_sendtext(f'Done with all tests for {sig}!')
-        nr_kem = 0
-    telegram_bot_sendtext('The whole test is completed! \o/')
+#    for sig in sigs:
+#        nr_sig += 1
+#        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
+#        create_certificate_authority(sig)
+#        create_server_keypair_CArequest(sig)
+#        create_signed_certificate(sig)
+#        
+#        for kem in kems:
+#            tcpdump_start(sig, kem)           
+#            benchmark_key_exchange(sig, kem)
+#            tcpdump_stop()
+#            nr_kem += 1
+#            nr_total += 1
+#            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
+#        telegram_bot_sendtext(f'Done with all tests for {sig}!')
+#        nr_kem = 0
+#    telegram_bot_sendtext('The whole test is completed! \o/')
         
 
 def initialize():
@@ -119,33 +136,33 @@ def create_certificate_authority(signature_algorithm):
 
     os.makedirs(output_folder, exist_ok=True)
     
-    if s in nonpqc_sig:
+    if s in nonpqc_sigs:
+        print(f'{s} is seen as a nonpqc')
         command = (f'./scripts/create_certificate_authority.sh {s} {resultsdir} {openssl}') 
-
     else:
+        print(f'{s} is seen as a pqc')
         command = (f'{openssl} ' 
-                   f'req -x509 -new -newkey {p} ' 
+                   f'req -x509 -new -newkey {s} ' 
                    f'-keyout {output_folder}/{s}_CA.key ' 
                    f'-out {output_folder}/{s}_CA.crt ' 
                    f'-nodes -subj "/CN={s}_test CA" -days 365 ' 
                    f'-config {openssl}.cnf')
 
-    options = f'--show-output --export-json {output_folder}/{s}_create_CA.json'
+    options = f'--export-json {output_folder}/{s}_create_CA.json'
 
     run_hyperfine(command, options)
 
 def create_server_keypair_CArequest(signature_algorithm):
     global resultsdir, openssl, nonpqc_sigs
     s = signature_algorithm 
-    p = check_nonpqc(s)
     output_folder = f'{resultsdir}/{s}'
     os.makedirs(output_folder, exist_ok=True)
 
-    if s in nonpqc_sig:
+    if s in nonpqc_sigs:
         command = (f'./scripts/create_server_keypair_CArequest.sh {s} {resultsdir} {openssl}')
     else:
         command = (f'{openssl} ' 
-                   f'req -new -newkey {p} ' 
+                   f'req -new -newkey {s} ' 
                    f'-keyout {output_folder}/{s}_srv.key ' 
                    f'-out {output_folder}/{s}_srv.csr ' 
                    f'-nodes -subj "/CN={s}_test server" ' 
@@ -161,11 +178,11 @@ def create_client(signature_algorithm):
     os.makedirs(output_folder, exist_ok=True)
 
 
-    if s in nonpqc_sig:
+    if s in nonpqc_sigs:
         command = (f'./scripts/create_client.sh {s} {resultsdir} {openssl}')
     else:
         command = (f'{openssl} ' 
-                   f'req -new -newkey {p} ' 
+                   f'req -new -newkey {s} ' 
                    f'-keyout {output_folder}/{s}_client.key ' 
                    f'-out {output_folder}/{s}_client.csr ' 
                    f'-nodes -subj "/CN={s}_test client" ' 
