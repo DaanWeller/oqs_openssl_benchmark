@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import time
 import argparse
@@ -31,6 +33,27 @@ def main():
     nr_kem = 0
     nr_total = 0
 
+    for nonpqc_sig in nonpqc_sigs:
+        nr_total += 1
+        nr_sig += 1
+
+        sig = nonpqc_sig
+        
+        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
+        create_certificate_authority(sig)
+        create_server_keypair_CArequest(sig)
+        create_signed_certificate(sig)
+        for kem in kems:
+            tcpdump_start(sig, kem)
+            benchmark_key_exchange(sig, kem)
+            tcpdump_stop()
+            nr_kem += 1
+            nr_total += 1
+            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
+        telegram_bot_sendtext(f'Done with all tests for {sig}!')
+        nr_kem = 0
+
+
     telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
     telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
 
@@ -50,27 +73,6 @@ def main():
             telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         nr_kem = 0
-
-    for nonpqc_sig in nonpqc_sigs:
-        nr_total += 1
-        nr_sig += 1
-
-        sig = f'ec:<(apps/openssl ecparam -name {nonpqc_sig})'
-        
-        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
-        create_certificate_authority(sig)
-        create_server_keypair_CArequest(sig)
-        create_signed_certificate(sig)
-        for kem in kems:
-            tcpdump_start(sig, kem)
-            benchmark_key_exchange(sig, kem)
-            tcpdump_stop()
-            nr_kem += 1
-            nr_total += 1
-            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
-        telegram_bot_sendtext(f'Done with all tests for {sig}!')
-        nr_kem = 0
-
     telegram_bot_sendtext('The whole test is completed! \o/')
         
 
@@ -104,57 +106,72 @@ def parse_config(config_path):
 
 def run_hyperfine(command, options):   
     hyperfine_command = f'hyperfine {options} \'{command}\''
-    print('running hyperfine')
-    subprocess.run(hyperfine_command, shell=True, check=True)
-    print('hyperfine run completed')
+    subprocess.run(hyperfine_command, shell=True, check=True, executable='/bin/bash')
 
 def run_heaptrack(command, options):
     heaptrack_command = f'heaptrack {options} {command}'
     subprocess.run(heaptrack_command, shell=True, check=True)
 
 def create_certificate_authority(signature_algorithm):
-    global resultsdir, openssl
+    global resultsdir, openssl, nonpqc_sigs 
     s = signature_algorithm # make the command more readable?
     output_folder = f'{resultsdir}/{s}'
+
     os.makedirs(output_folder, exist_ok=True)
-    command = (f'{openssl} ' 
-               f'req -x509 -new -newkey {s} ' 
-               f'-keyout {output_folder}/{s}_CA.key ' 
-               f'-out {output_folder}/{s}_CA.crt ' 
-               f'-nodes -subj "/CN={s}_test CA" -days 365 ' 
-               f'-config {openssl}.cnf')
-    options = f'--export-json {output_folder}/{s}_create_CA.json'
+    
+    if s in nonpqc_sig:
+        command = (f'./scripts/create_certificate_authority.sh {s} {resultsdir} {openssl}') 
+
+    else:
+        command = (f'{openssl} ' 
+                   f'req -x509 -new -newkey {p} ' 
+                   f'-keyout {output_folder}/{s}_CA.key ' 
+                   f'-out {output_folder}/{s}_CA.crt ' 
+                   f'-nodes -subj "/CN={s}_test CA" -days 365 ' 
+                   f'-config {openssl}.cnf')
+
+    options = f'--show-output --export-json {output_folder}/{s}_create_CA.json'
 
     run_hyperfine(command, options)
 
 def create_server_keypair_CArequest(signature_algorithm):
-    global resultsdir, openssl
+    global resultsdir, openssl, nonpqc_sigs
     s = signature_algorithm 
+    p = check_nonpqc(s)
     output_folder = f'{resultsdir}/{s}'
     os.makedirs(output_folder, exist_ok=True)
-    command = (f'{openssl} ' 
-               f'req -new -newkey {s} ' 
-               f'-keyout {output_folder}/{s}_srv.key ' 
-               f'-out {output_folder}/{s}_srv.csr ' 
-               f'-nodes -subj "/CN={s}_test server" ' 
-               f'-config {openssl}.cnf')
+
+    if s in nonpqc_sig:
+        command = (f'./scripts/create_server_keypair_CArequest.sh {s} {resultsdir} {openssl}')
+    else:
+        command = (f'{openssl} ' 
+                   f'req -new -newkey {p} ' 
+                   f'-keyout {output_folder}/{s}_srv.key ' 
+                   f'-out {output_folder}/{s}_srv.csr ' 
+                   f'-nodes -subj "/CN={s}_test server" ' 
+                   f'-config {openssl}.cnf')
     options = f'--export-json {output_folder}/{s}_server_keypair_CArequest.json'
 
     run_hyperfine(command, options)
 
 def create_client(signature_algorithm):
-    global resultsdir, openssl
+    global resultsdir, openssl, nonpqc_sigs
     s = signature_algorithm 
-    output_folder = f'{resultsdir}/{s}'
+    output_folder= f'{resultsdir}/{s}'
     os.makedirs(output_folder, exist_ok=True)
-    command = (f'{openssl} ' 
-               f'req -new -newkey {s} ' 
-               f'-keyout {output_folder}/{s}_client.key ' 
-               f'-out {output_folder}/{s}_client.csr ' 
-               f'-nodes -subj "/CN={s}_test client" ' 
-               f'-config {openssl}.cnf')
 
-    subprocess.run(command, shell=True)
+
+    is s in nonpqc_sig:
+        command = (f'./scripts/create_client.sh {s} {resultsdir} {openssl}')
+    else:
+        command = (f'{openssl} ' 
+                   f'req -new -newkey {p} ' 
+                   f'-keyout {output_folder}/{s}_client.key ' 
+                   f'-out {output_folder}/{s}_client.csr ' 
+                   f'-nodes -subj "/CN={s}_test client" ' 
+                   f'-config {openssl}.cnf')
+
+    subprocess.run(command, shell=True) 
 
     command = (f'{openssl} ' 
                f'x509 -req ' 
@@ -163,7 +180,7 @@ def create_client(signature_algorithm):
                f'-CA {output_folder}/{s}_CA.crt -CAkey {output_folder}/{s}_CA.key '
                f'-CAcreateserial -days 365')
  
-    subprocess.run(command, shell=True)
+    subprocess.run(command, shell=True) 
 
 def create_signed_certificate(signature_algorithm):
     global resultsdir, openssl
