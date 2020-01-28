@@ -161,7 +161,7 @@ def create_client(signature_algorithm):
     os.makedirs(output_folder, exist_ok=True)
 
 
-    is s in nonpqc_sig:
+    if s in nonpqc_sig:
         command = (f'./scripts/create_client.sh {s} {resultsdir} {openssl}')
     else:
         command = (f'{openssl} ' 
