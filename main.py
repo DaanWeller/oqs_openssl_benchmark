@@ -23,8 +23,11 @@ def main():
     global sigs, kems, nonpqc_sigs
     initialize()
     
+    start_time = time.time()
+
     telegram_bot_sendtext('---------------------------------------')
-    telegram_bot_sendtext('begin testing!')
+    telegram_bot_sendtext('Begin testing!')
+    telegram_bot_sendtext(f'Results are put in {resultsdir}')
 
     amount_sig = len(sigs) + len(nonpqc_sigs)
     amount_kem = len(kems)
@@ -32,6 +35,9 @@ def main():
     nr_sig = 0
     nr_kem = 0
     nr_total = 0
+
+    telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
+    telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
 
 
     for sig in sigs:
@@ -71,8 +77,14 @@ def main():
         nr_kem = 0
 
 
-    telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
-    telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
+    end_time = time.time()
+
+    elapsed_time = end_time - start_time
+
+    telegram_bot_sendtext(f'Done with everything! \o/')
+    telegram_bot_sendtext(f'Begin time was {start_time}.')
+    telegram_bot_sendtext(f'End time was {end_time}.')
+    telegram_bot_sendtext(f'Time elapsed: {elapsed_time}')
 
 #    for sig in sigs:
 #        nr_sig += 1
