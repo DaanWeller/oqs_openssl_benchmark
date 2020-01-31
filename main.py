@@ -32,6 +32,8 @@ def main():
     telegram_bot_sendtext('Begin testing!')
     telegram_bot_sendtext(f'Results are put in {resultsdir}')
 
+    disk_usage()
+    
     amount_sig = len(sigs) + len(nonpqc_sigs) + len(hybrid_sigs)
     amount_kem = len(kems) + len(hybrid_kems)
     amount_total = amount_sig * amount_kem
@@ -57,7 +59,9 @@ def main():
             telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {len(hybrid_kems)} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         copy_results(f'{sig}')
+        disk_usage()
         nr_kem = 0
+
 
     for sig in sigs:
         nr_sig += 1
@@ -74,6 +78,7 @@ def main():
             telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         copy_results(f'{sig}')
+        disk_usage()
         nr_kem = 0
 
     for nonpqc_sig in nonpqc_sigs:
@@ -92,30 +97,9 @@ def main():
             telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         copy_results(f'{sig}')
+        disk_usage()
         nr_kem = 0
 
-
-#    telegram_bot_sendtext(f'I found {amount_sig} different signatures and {amount_kem} different key exchange algorithms.')
-#    telegram_bot_sendtext(f'Therefore, there is a total of {amount_total} combinations.')
-#
-#    for sig in sigs:
-#        nr_sig += 1
-#        telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
-#        create_certificate_authority(sig)
-#        create_server_keypair_CArequest(sig)
-#        create_signed_certificate(sig)
-#        
-#        for kem in kems:
-#            tcpdump_start(sig, kem)           
-#            benchmark_key_exchange(sig, kem)
-#            tcpdump_stop()
-#            nr_kem += 1
-#            nr_total += 1
-#            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
-#        telegram_bot_sendtext(f'Done with all tests for {sig}!')
-#        nr_kem = 0
-#    telegram_bot_sendtext('The whole test is completed! \o/')
-        
     end_time = time.time()
     
     elapsed_time = end_time - start_time
@@ -283,7 +267,18 @@ def create_signed_certificate(signature_algorithm):
 
     run_hyperfine(command, options)
     run_heaptrack(command, output_file)
-    
+
+def disk_usage():
+    head = subprocess.check_output('df -h | head -n 1', shell=True)
+    usage =  subprocess.check_output('df -h | grep xvda', shell=True)
+
+    head = head.decode("utf-8").splitlines()
+    usage = usage.decode("utf-8").splitlines()
+
+    telegram_bot_sendtext('Disk usage:')
+    telegram_bot_sendtext(f'{head} \n {usage}')
+    telegram_bot_sendtext(f'{usage}')
+
 def benchmark_key_exchange(s, kem):
     global resultsdir, openssl, server_ip, server_port, amount_kem 
     output_folder = f'{resultsdir}/{s}'
