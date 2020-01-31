@@ -190,7 +190,7 @@ def create_certificate_authority(signature_algorithm):
                    f'-nodes -subj "/CN={s}_test CA" -days 365 ' 
                    f'-config {openssl}.cnf')
 
-    options = f'--min-runs 100 --export-json {output_file}.json'
+    options = f'--min-runs 1000 --export-json {output_file}.json'
 
     run_hyperfine(command, options)
     run_heaptrack(command, output_file)
@@ -214,7 +214,7 @@ def create_server_keypair_CArequest(signature_algorithm):
                    f'-out {output_folder}/{s}_srv.csr ' 
                    f'-nodes -subj "/CN={s}_test server" ' 
                    f'-config {openssl}.cnf')
-    options = f'--min-runs 100 --export-json {output_file}.json'
+    options = f'--min-runs 1000 --export-json {output_file}.json'
 
     run_hyperfine(command, options)
     run_heaptrack(command, output_file)
@@ -263,7 +263,7 @@ def create_signed_certificate(signature_algorithm):
                f'-out {output_folder}/{s}_srv.crt ' 
                f'-CA {output_folder}/{s}_CA.crt -CAkey {output_folder}/{s}_CA.key '
                f'-CAcreateserial -days 365')
-    options = f'--min-runs 100 --export-json {output_file}.json'
+    options = f'--min-runs 1000 --export-json {output_file}.json'
 
     run_hyperfine(command, options)
     run_heaptrack(command, output_file)
@@ -331,6 +331,8 @@ def copy_results(sigdir):
     print(f'scp -r {sigdir} {result_server}:{result_srv_dir}')
     subprocess.run(f'scp -r {resultsdir}/{sigdir} {result_server}:{result_srv_dir}', shell=True, check=True)
     telegram_bot_sendtext(f'{sigdir} is copied over to {result_server}:{result_srv_dir} :D')
+    subprocess.run(f'rm -rf {resultsdir}/{sigdir}', shell=True, check=True)
+    telegram_bot_sendtext(f'Cleaned up by removing {resultsdir}/{sigdir} :)')
 
 def telegram_bot_sendtext(bot_message):
     bot_message = bot_message.replace("_", "\_")
