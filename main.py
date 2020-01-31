@@ -11,6 +11,8 @@ import requests
 wd = ''
 resultsdir = ''
 openssl = ''
+result_server = ''
+result_srv_dir = ''
 
 kems = []
 sigs = []
@@ -31,7 +33,7 @@ def main():
     telegram_bot_sendtext(f'Results are put in {resultsdir}')
 
     amount_sig = len(sigs) + len(nonpqc_sigs) + len(hybrid_sigs)
-    amount_kem = len(kems)
+    amount_kem = len(kems) + len(hybrid_kems)
     amount_total = amount_sig * amount_kem
     nr_sig = 0
     nr_kem = 0
@@ -52,7 +54,7 @@ def main():
             tcpdump_start(sig, kem)
             benchmark_key_exchange(sig, kem)
             tcpdump_stop()
-            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {amount_kem} ] - \[ {nr_total} / {amount_total} ]')
+            telegram_bot_sendtext(f'{sig} {kem} completed! \[ {nr_sig} / {amount_sig} ] - \[ {nr_kem} / {len(hybrid_kems)} ] - \[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Done with all tests for {sig}!')
         copy_results(f'{sig}')
         nr_kem = 0
@@ -141,13 +143,12 @@ def parse_config(config_path):
     config = ConfigParser(delimiters=('='))
     config.read(config_path)
     
-    global resultsdir, openssl, server_ip, server_port, kems, sigs, nonpqc_sigs, hybrid_kems, hybrid_sigs
+    global resultsdir, openssl, server_ip, server_port, kems, sigs, nonpqc_sigs, hybrid_kems, hybrid_sigs, result_server, result_srv_dir
 
     resultsdir      = config.get('main', 'results_dir')
     openssl         = config.get('main', 'openssl_app')
     server_ip       = config.get('main', 'server_ip')
     server_port     = config.get('main', 'server_port')
-    result_user     = config.get('main', 'result_user')
     result_server   = config.get('main', 'result_server')
     result_srv_dir  = config.get('main', 'result_srv_dir')
     kems            = [kem.strip() for kem in config.get('main', 'kems').splitlines()]
@@ -190,6 +191,8 @@ def create_certificate_authority(signature_algorithm):
     output_file = f'{output_folder}/{s}_create_CA'
 
     os.makedirs(output_folder, exist_ok=True)
+
+    telegram_bot_sendtext(f'Creating CA for {s}')
     
     if s in nonpqc_sigs:
         print(f'{s} is seen as a nonpqc')
@@ -215,6 +218,8 @@ def create_server_keypair_CArequest(signature_algorithm):
     output_file = f'{output_folder}/{s}_server_keypair_CArequest'
 
     os.makedirs(output_folder, exist_ok=True)
+
+    telegram_bot_sendtext(f'Creating server keypair for {s}')
 
     if s in nonpqc_sigs:
         command = (f'./scripts/create_server_keypair_CArequest.sh {s} {resultsdir} {openssl}')
@@ -266,6 +271,8 @@ def create_signed_certificate(signature_algorithm):
 
     os.makedirs(output_folder, exist_ok=True)
 
+    telegram_bot_sendtext(f'Create signed cert for {s}') 
+
     command = (f'{openssl} ' 
                f'x509 -req ' 
                f'-in {output_folder}/{s}_srv.csr ' 
@@ -280,7 +287,7 @@ def create_signed_certificate(signature_algorithm):
 def benchmark_key_exchange(s, kem):
     global resultsdir, openssl, server_ip, server_port, amount_kem 
     output_folder = f'{resultsdir}/{s}'
-    runs = 101
+    runs = 1000
 
     # copy over server key and certificate to remote server home folder
     subprocess.run(f'scp {output_folder}/{s}_srv.key {output_folder}/{s}_srv.crt {server_ip}:~/', shell=True, check=True)
@@ -324,7 +331,11 @@ def tcpdump_stop():
     subprocess.run("ps -ef | grep tcpdump | grep -v grep | awk \'{print $2}\' | xargs -r kill -9", shell=True, check=True)
 
 def copy_results(sigdir):
-    subprocess.run(f'scp -r {sigdir} {result_server}:{result_srv_dir}', shell=True, check=True)
+    global resultsdir, result_server, result_srv_dir
+    print(f'Command to run for SPC:')
+    print(f'scp -r {sigdir} {result_server}:{result_srv_dir}')
+    subprocess.run(f'scp -r {resultsdir}/{sigdir} {result_server}:{result_srv_dir}', shell=True, check=True)
+    telegram_bot_sendtext(f'{sigdir} is copied over to {result_server}:{result_srv_dir} :D')
 
 def telegram_bot_sendtext(bot_message):
     bot_message = bot_message.replace("_", "\_")
