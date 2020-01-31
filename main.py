@@ -42,10 +42,6 @@ def main():
 
     for sig in hybrid_sigs:
         nr_sig += 1
-        sig = str(sig)
-        telegram_bot_sendtext(f'KEMs for: {sig}')
-        telegram_bot_sendtext(f'\[ {nr_sig} / {amount_sig} ]')
-        telegram_bot_sendtext(f'\[ {nr_total} / {amount_total} ]')
         telegram_bot_sendtext(f'Now computing KEMs for {sig} \[ {nr_sig} / {amount_sig} ] - \[ {nr_total} / {amount_total} ]')
         create_certificate_authority(sig)
         create_server_keypair_CArequest(sig)
